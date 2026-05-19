@@ -1,8 +1,6 @@
 """Typer entrypoint. Each sub-command maps 1:1 to a pipeline stage."""
 from __future__ import annotations
-import json
 import os
-import sys
 from pathlib import Path
 from typing import Optional
 
@@ -102,10 +100,14 @@ def enrich_companies_cmd(
     fiber = _make_fiber_client()
     tracker = CostTracker(conn, max_spend_usd=max_spend_usd)
     try:
-        n = companies.enrich_companies(conn, fiber, tracker, usd_per_credit=usd_per_credit)
-    except SpendCapExceeded as e:
-        typer.echo(f"aborted: {e}", err=True)
-        raise typer.Exit(code=2)
+        try:
+            n = companies.enrich_companies(conn, fiber, tracker, usd_per_credit=usd_per_credit)
+        except SpendCapExceeded as e:
+            typer.echo(f"aborted: {e}", err=True)
+            raise typer.Exit(code=2)
+    finally:
+        if hasattr(fiber, "close"):
+            fiber.close()
     typer.echo(f"enriched {n} companies, cost ${tracker.spent_usd:.2f}")
 
 
@@ -160,16 +162,37 @@ def build_views_cmd():
 def run_all_cmd(
     csv_path: Path = typer.Argument(..., exists=True, dir_okay=False),
     max_spend_usd: Optional[float] = typer.Option(None, "--max-spend-usd"),
+    batch_size: int = typer.Option(50, "--batch-size"),
 ):
     """Run all stages end-to-end."""
     load_dotenv()
     conn = _open_db()
+    usd_per_credit = float(os.environ.get("FIBER_USD_PER_CREDIT", "0.02"))
+    usd_in = float(os.environ.get("HAIKU_USD_PER_INPUT_MTOK", "1.00"))
+    usd_out = float(os.environ.get("HAIKU_USD_PER_OUTPUT_MTOK", "5.00"))
+    model = os.environ.get("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001")
+
     ingest.ingest_csv(conn, csv_path)
     companies.dedupe_companies(conn)
-    enrich_companies_cmd(dry_run=False, max_spend_usd=max_spend_usd)
-    classify_people_cmd(dry_run=False, max_spend_usd=max_spend_usd, batch_size=50)
+    tracker = CostTracker(conn, max_spend_usd=max_spend_usd)
+    fiber = _make_fiber_client()
+    try:
+        try:
+            companies.enrich_companies(conn, fiber, tracker,
+                                       usd_per_credit=usd_per_credit)
+            classifier = _make_classifier_client()
+            classify.classify_people(conn, classifier, tracker,
+                                     model=model, batch_size=batch_size,
+                                     usd_per_input_mtok=usd_in,
+                                     usd_per_output_mtok=usd_out)
+        except SpendCapExceeded as e:
+            typer.echo(f"aborted: {e}", err=True)
+            raise typer.Exit(code=2)
+    finally:
+        if hasattr(fiber, "close"):
+            fiber.close()
     views.build_views(conn)
-    typer.echo("run-all complete")
+    typer.echo(f"run-all complete, total cost ${tracker.spent_usd:.4f}")
 
 
 @app.command(name="cost-report")

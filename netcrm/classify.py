@@ -1,13 +1,13 @@
 """Classify-people stage: batch un-classified people through the Haiku tool."""
 from __future__ import annotations
 import sqlite3
-from datetime import datetime, timezone
 from typing import Protocol
 
 from netcrm.anthropic_client import (
     ClassificationBatchResult, ClassificationRequest,
 )
 from netcrm.cost import CostTracker
+from netcrm.db import now_iso
 
 
 class _ClassifierLike(Protocol):
@@ -73,7 +73,7 @@ def classify_people(
             usd_cost=batch_usd,
             context=f"batch_size={len(requests)}",
         )
-        now_iso = datetime.now(timezone.utc).isoformat()
+        ts = now_iso()
         with conn:
             conn.executemany(
                 """
@@ -89,7 +89,7 @@ def classify_people(
                 """,
                 [
                     (c["linkedin_url"], c["role_bucket"], c["seniority"],
-                     now_iso, model)
+                     ts, model)
                     for c in result.classifications
                 ],
             )

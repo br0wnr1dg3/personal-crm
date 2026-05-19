@@ -5,6 +5,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
+def now_iso() -> str:
+    """UTC ISO-8601 timestamp string. Shared helper across stages."""
+    return datetime.now(timezone.utc).isoformat()
+
+
 _MIGRATIONS_TABLE = """
 CREATE TABLE IF NOT EXISTS _migrations (
   filename   TEXT PRIMARY KEY,

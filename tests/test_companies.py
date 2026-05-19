@@ -1,22 +1,13 @@
 from pathlib import Path
-import sqlite3
 import json
 import pytest
 
-from netcrm import db, ingest, companies
+from netcrm import companies
 from netcrm.cost import CostTracker
 from netcrm._stubs import StubFiberClient
 
 REPO_ROOT = Path(__file__).parent.parent
 FIXTURE_CSV = REPO_ROOT / "tests" / "fixtures" / "tiny_connections.csv"
-
-
-@pytest.fixture
-def populated_db(tmp_db_path: Path) -> sqlite3.Connection:
-    conn = db.connect(tmp_db_path)
-    db.apply_migrations(conn, REPO_ROOT / "migrations")
-    ingest.ingest_csv(conn, FIXTURE_CSV)
-    return conn
 
 
 def test_dedupe_companies_creates_one_row_per_key(populated_db):

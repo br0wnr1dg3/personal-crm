@@ -1,21 +1,8 @@
-from pathlib import Path
-import sqlite3
 import pytest
 
-from netcrm import db, ingest, classify
+from netcrm import classify
 from netcrm._stubs import StubClassifierClient
 from netcrm.cost import CostTracker
-
-REPO_ROOT = Path(__file__).parent.parent
-FIXTURE_CSV = REPO_ROOT / "tests" / "fixtures" / "tiny_connections.csv"
-
-
-@pytest.fixture
-def populated_db(tmp_db_path: Path) -> sqlite3.Connection:
-    conn = db.connect(tmp_db_path)
-    db.apply_migrations(conn, REPO_ROOT / "migrations")
-    ingest.ingest_csv(conn, FIXTURE_CSV)
-    return conn
 
 
 def test_classify_people_writes_one_row_per_person(populated_db):

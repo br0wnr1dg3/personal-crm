@@ -1,10 +1,10 @@
 """Companies stage: dedupe normalized company keys + enrich via Fiber."""
 from __future__ import annotations
 import sqlite3
-from datetime import datetime, timezone
 from typing import Protocol
 
 from netcrm.cost import CostTracker
+from netcrm.db import now_iso
 from netcrm.fiber import FiberEnrichment, FiberStatus
 
 
@@ -40,10 +40,6 @@ def dedupe_companies(conn: sqlite3.Connection) -> int:
 
 class _FiberLike(Protocol):
     def enrich(self, name: str) -> FiberEnrichment: ...
-
-
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def count_unenriched(conn: sqlite3.Connection) -> int:
@@ -96,7 +92,7 @@ def enrich_companies(
                     result.hq_country, result.hq_region, result.website,
                     result.description,
                     # error: leave fiber_enriched_at NULL so we retry next run
-                    None if result.status == FiberStatus.ERROR else _now_iso(),
+                    None if result.status == FiberStatus.ERROR else now_iso(),
                     result.status.value,
                     row["company_key"],
                 ),
