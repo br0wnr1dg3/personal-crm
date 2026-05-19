@@ -42,3 +42,17 @@ def test_apply_migrations_runs_in_filename_order(tmp_db_path: Path, tmp_path: Pa
     ).fetchall()
     assert [r[0] for r in rows] == ["001_a.sql", "002_b.sql"]
     conn.close()
+
+def test_001_init_creates_all_tables(tmp_db_path: Path):
+    from netcrm import db
+    repo_root = Path(__file__).parent.parent
+    conn = db.connect(tmp_db_path)
+    db.apply_migrations(conn, repo_root / "migrations")
+    tables = {
+        r[0] for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()
+    }
+    expected = {"people", "companies", "people_class", "costs", "_migrations"}
+    assert expected.issubset(tables)
+    conn.close()
