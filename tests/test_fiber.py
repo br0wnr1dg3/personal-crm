@@ -1,3 +1,5 @@
+import os
+
 import httpx
 import pytest
 import respx
@@ -7,7 +9,9 @@ from netcrm.fiber import FiberClient, FiberStatus
 
 @pytest.fixture
 def fiber_client():
-    return FiberClient(api_key="test-key", base_url="https://api.fiber.test")
+    client = FiberClient(api_key="test-key", base_url="https://api.fiber.test")
+    yield client
+    client.close()
 
 
 @respx.mock
@@ -59,6 +63,16 @@ def test_enrich_returns_permanent_error_on_400(fiber_client):
 
 
 @respx.mock
+def test_enrich_returns_error_on_network_failure(fiber_client):
+    respx.post("https://api.fiber.test/v1/organizations/enrich").mock(
+        side_effect=httpx.ConnectError("connection refused")
+    )
+    result = fiber_client.enrich("Acme")
+    assert result.status == FiberStatus.ERROR
+    assert result.units == 0
+
+
+@respx.mock
 def test_enrich_reports_units_consumed(fiber_client):
     respx.post("https://api.fiber.test/v1/organizations/enrich").mock(
         return_value=httpx.Response(200, headers={"x-fiber-credits": "2"}, json={
@@ -67,9 +81,6 @@ def test_enrich_reports_units_consumed(fiber_client):
     )
     result = fiber_client.enrich("Acme")
     assert result.units == 2
-
-
-import os
 
 
 @pytest.mark.skipif(
