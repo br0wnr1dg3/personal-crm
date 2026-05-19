@@ -35,7 +35,12 @@ def classify_people(
     usd_per_input_mtok: float,
     usd_per_output_mtok: float,
 ) -> int:
-    """Classify every un-classified person. Returns number of batches sent."""
+    """Classify every un-classified person. Returns number of batches sent.
+
+    All un-classified rows are fetched into memory before batching begins.
+    Acceptable for v1 (max ~5,000 connections); switch to streaming
+    fetchmany() if datasets grow beyond ~100k rows.
+    """
     rows = conn.execute(
         """
         SELECT p.linkedin_url, p.raw_position, p.raw_company

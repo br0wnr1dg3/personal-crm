@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from netcrm.anthropic_client import ClassificationBatchResult
 from netcrm.fiber import FiberEnrichment, FiberStatus
 from netcrm.normalize import company_key
 
@@ -34,15 +35,14 @@ def load_canned_fiber_stub(fixtures_dir: Path) -> StubFiberClient:
     return StubFiberClient(canned)
 
 
-from netcrm.anthropic_client import ClassificationBatchResult
-
-
 class StubClassifierClient:
     """Returns deterministic classifications keyed on words in raw_position."""
     def __init__(self):
         self.batches_called = 0
 
-    def classify_batch(self, requests):
+    def classify_batch(
+        self, requests: list,  # list[ClassificationRequest] — avoid forward import-cycle
+    ) -> ClassificationBatchResult:
         self.batches_called += 1
         out = []
         for r in requests:
