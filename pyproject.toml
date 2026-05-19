@@ -16,6 +16,7 @@ dev = [
   "pytest>=8",
   "respx>=0.21",
   "pytest-asyncio>=0.23",
+  "pyyaml>=6",
 ]
 serve = [
   "datasette>=1.0a13",
