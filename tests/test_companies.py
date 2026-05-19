@@ -4,7 +4,6 @@ import json
 import pytest
 
 from netcrm import db, ingest, companies
-from netcrm.fiber import FiberClient, FiberEnrichment, FiberStatus
 from netcrm.cost import CostTracker
 from netcrm._stubs import StubFiberClient
 
@@ -109,3 +108,27 @@ def test_enrich_companies_logs_costs(populated_db, stub_fiber):
     n_companies = populated_db.execute("SELECT COUNT(*) FROM companies").fetchone()[0]
     # Every enrichment attempt logs one cost row (ok + not_found both cost a credit)
     assert n_cost_rows == n_companies
+
+
+def test_enrich_companies_retries_error_status(populated_db, stub_fiber):
+    """ERROR-status rows are picked back up; NOT_FOUND/PERMANENT_ERROR are not."""
+    companies.dedupe_companies(populated_db)
+    # Seed 'acme' with fiber_status='error' and fiber_enriched_at NULL (the error state)
+    with populated_db:
+        populated_db.execute(
+            "UPDATE companies SET fiber_status = 'error', fiber_enriched_at = NULL "
+            "WHERE company_key = 'acme'"
+        )
+    stub_fiber.calls.clear()  # ignore any prior call tracking
+    tracker = CostTracker(populated_db, max_spend_usd=None)
+    companies.enrich_companies(populated_db, stub_fiber, tracker, usd_per_credit=0.02)
+    # Acme should have been re-queried (display_name "Acme Inc." or similar)
+    assert any("Acme" in name for name in stub_fiber.calls), (
+        f"expected 'Acme' to be in re-queried names; got {stub_fiber.calls!r}"
+    )
+    # And it succeeded this time
+    row = populated_db.execute(
+        "SELECT fiber_status, industry FROM companies WHERE company_key = 'acme'"
+    ).fetchone()
+    assert row["fiber_status"] == "ok"
+    assert row["industry"] == "Manufacturing"

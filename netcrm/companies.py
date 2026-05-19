@@ -42,6 +42,10 @@ class _FiberLike(Protocol):
     def enrich(self, name: str) -> FiberEnrichment: ...
 
 
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
 def count_unenriched(conn: sqlite3.Connection) -> int:
     return conn.execute(
         """
@@ -68,7 +72,6 @@ def enrich_companies(
         """
     ).fetchall()
     n_calls = 0
-    now_iso = lambda: datetime.now(timezone.utc).isoformat()  # noqa: E731
     for row in rows:
         result: FiberEnrichment = fiber.enrich(row["display_name"])
         n_calls += 1
@@ -93,7 +96,7 @@ def enrich_companies(
                     result.hq_country, result.hq_region, result.website,
                     result.description,
                     # error: leave fiber_enriched_at NULL so we retry next run
-                    None if result.status == FiberStatus.ERROR else now_iso(),
+                    None if result.status == FiberStatus.ERROR else _now_iso(),
                     result.status.value,
                     row["company_key"],
                 ),
