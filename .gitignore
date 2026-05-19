@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+.venv/
+.env
+crm.db
+crm.db-journal
+.pytest_cache/
+*.egg-info/
+dist/
+build/
