@@ -1,5 +1,7 @@
 from unittest.mock import MagicMock
 
+import pytest
+
 from netcrm.anthropic_client import ClassifierClient, ClassificationRequest
 
 
@@ -56,3 +58,30 @@ def test_classify_batch_clamps_invalid_enums():
                                                           raw_company="y")])
     assert result.classifications[0]["role_bucket"] == "Other"
     assert result.classifications[0]["seniority"] == "Unknown"
+
+
+def test_classify_batch_handles_no_tool_use_block():
+    """When Anthropic returns content with no tool_use block, default everything to Other/Unknown."""
+    fake = MagicMock()
+    response = MagicMock()
+    response.content = []  # no tool_use block
+    response.usage = MagicMock(input_tokens=100, output_tokens=0)
+    fake.messages.create.return_value = response
+    client = ClassifierClient(fake, model="claude-haiku-4-5-20251001")
+    result = client.classify_batch([
+        ClassificationRequest(linkedin_url="u1", raw_position="Engineer", raw_company="Acme")
+    ])
+    assert result.classifications[0]["role_bucket"] == "Other"
+    assert result.classifications[0]["seniority"] == "Unknown"
+    assert result.input_tokens == 100
+
+
+def test_classify_batch_rejects_oversize_batches():
+    fake = MagicMock()
+    client = ClassifierClient(fake, model="x")
+    requests = [
+        ClassificationRequest(linkedin_url=f"u{i}", raw_position="", raw_company="")
+        for i in range(101)
+    ]
+    with pytest.raises(ValueError, match="batch too large"):
+        client.classify_batch(requests)

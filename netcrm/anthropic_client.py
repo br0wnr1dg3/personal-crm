@@ -86,8 +86,18 @@ class ClassifierClient:
     def classify_batch(
         self, requests: list[ClassificationRequest],
     ) -> ClassificationBatchResult:
+        """Classify a batch of people. Keep batch size <= 100 to stay within max_tokens=4096.
+
+        At ~30 output tokens per classification, 4096 max_tokens supports ~136 items
+        before Haiku truncates mid-JSON. We cap at 100 for headroom; the caller
+        should chunk larger inputs.
+        """
         if not requests:
             return ClassificationBatchResult([], 0, 0)
+        if len(requests) > 100:
+            raise ValueError(
+                f"batch too large ({len(requests)} > 100); chunk and call repeatedly"
+            )
         user_lines = [
             f"- url={r.linkedin_url} | position={r.raw_position!r} | "
             f"company={r.raw_company!r}"
@@ -111,7 +121,8 @@ class ClassifierClient:
              and getattr(b, "name", "") == "classify_people"),
             None,
         )
-        raw = tool_block.input.get("classifications", []) if tool_block else []
+        raw_input = getattr(tool_block, "input", None) if tool_block else None
+        raw = (raw_input.get("classifications", []) if isinstance(raw_input, dict) else [])
         cleaned: list[dict[str, str]] = []
         url_order = [r.linkedin_url for r in requests]
         by_url = {item.get("linkedin_url"): item for item in raw if isinstance(item, dict)}
