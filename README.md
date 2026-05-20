@@ -43,11 +43,48 @@ netcrm run-all ~/Downloads/connections.csv --max-spend-usd 105
 
 ## Browse + query
 
+Two ways to interact with the dataset.
+
+### Datasette (grid + SQL panel)
+
 ```bash
 netcrm serve
 ```
 
 Opens Datasette at <http://localhost:8001>. The starter saved queries appear at the top of the database page. Click one to run it; edit the SQL in-browser to tune; export as CSV.
+
+### Chat agent via MCP (recommended)
+
+`netcrm-mcp` is a stdio MCP server that exposes 12 tools — query, tag, note, mark outreached, trigger more Fiber enrichment, check credit balance. Wire it into any MCP-aware chat client (Claude Code, claude.ai with custom integration, Cursor, Zed) and talk to your network like an agent.
+
+**Claude Code wiring** — add to `~/.claude.json` (or the equivalent for your install):
+
+```json
+{
+  "mcpServers": {
+    "netcrm": {
+      "command": "/full/path/to/personal-network-crm/.venv/bin/netcrm-mcp",
+      "env": {
+        "NETCRM_DB_PATH": "/full/path/to/personal-network-crm/crm.db",
+        "FIBER_API_KEY": "sk_live_...",
+        "FIBER_USD_PER_CREDIT": "0.020"
+      }
+    }
+  }
+}
+```
+
+Restart Claude Code, then in chat:
+
+```
+> Show me VPs of marketing in software companies I've connected to in the last year
+> Tag Alice Smith 'demo-scheduled' and add a note that Jane introduced us
+> What would it cost to enrich every Engineering Director's company I haven't enriched yet?
+> Enrich those 50 companies, dry_run=false
+> Who haven't I reached out to in 6 months who's a Founder at a SaaS company?
+```
+
+The agent writes its own SQL through `query_contacts`, persists state via `add_tag`/`set_note`/`mark_outreached`, and can trigger more Fiber enrichment via `enrich_companies` with cost guardrails (always defaults to dry-run).
 
 ## Re-running on a fresh CSV
 

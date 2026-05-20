@@ -9,6 +9,7 @@ dependencies = [
   "anthropic>=0.40",
   "python-dotenv>=1.0",
   "tqdm>=4.66",
+  "mcp>=1.0",
 ]
 
 [project.optional-dependencies]
@@ -24,6 +25,7 @@ serve = [
 
 [project.scripts]
 netcrm = "netcrm.cli:app"
+netcrm-mcp = "netcrm.mcp_server:main"
 
 [build-system]
 requires = ["hatchling"]
