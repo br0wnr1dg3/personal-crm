@@ -40,13 +40,24 @@ from typing import Any
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
 
-# Load .env once at import time so the server has access to keys.
-load_dotenv()
+# Load .env from the repo root explicitly. When Claude Code spawns this
+# server via stdio the cwd is whatever Claude Code's cwd is, NOT the repo —
+# so default load_dotenv() can't find the file.
+REPO_ROOT = Path(__file__).resolve().parent.parent
+load_dotenv(dotenv_path=REPO_ROOT / ".env")
 
-DB_PATH = Path(os.environ.get("NETCRM_DB_PATH", "crm.db"))
+_db_env = os.environ.get("NETCRM_DB_PATH")
+DB_PATH = (
+    Path(_db_env).expanduser()
+    if _db_env and Path(_db_env).expanduser().is_absolute()
+    else (REPO_ROOT / (_db_env or "crm.db")).resolve()
+)
 USD_PER_CREDIT = float(os.environ.get("FIBER_USD_PER_CREDIT", "0.020"))
 FIBER_API_KEY = os.environ.get("FIBER_API_KEY")
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
+ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001")
 FIBER_URL = "https://mcp.fiber.ai/mcp/v2"
+MIGRATIONS_DIR = REPO_ROOT / "migrations"
 
 mcp = FastMCP("netcrm")
 
@@ -581,6 +592,189 @@ async def get_credit_balance() -> str:
                     out.get("available", 0) // 4 if out.get("available") else 0
                 ),
             })
+
+
+# ---------- Pipeline (ingest / dedupe / classify) ----------
+
+@mcp.tool()
+def pipeline_status() -> str:
+    """Snapshot of what's in the DB and what's pending.
+
+    Call this FIRST on a fresh DB or when orienting. Returns:
+      - row counts per stage
+      - how many companies are un-enriched
+      - how many people are un-classified
+      - whether the Anthropic key + Fiber key are configured
+      - cumulative cost so far
+    """
+    from netcrm import db
+    conn = _rw_conn()
+    db.apply_migrations(conn, MIGRATIONS_DIR)
+    n_people = conn.execute("SELECT COUNT(*) FROM people").fetchone()[0]
+    n_companies = conn.execute("SELECT COUNT(*) FROM companies").fetchone()[0]
+    n_classified = conn.execute("SELECT COUNT(*) FROM people_class").fetchone()[0]
+    n_enriched = conn.execute(
+        "SELECT COUNT(*) FROM companies WHERE fiber_status='ok'"
+    ).fetchone()[0]
+    n_unenriched = conn.execute(
+        "SELECT COUNT(*) FROM companies "
+        "WHERE fiber_enriched_at IS NULL "
+        "  AND (fiber_status IS NULL OR fiber_status='error')"
+    ).fetchone()[0]
+    costs = {}
+    for r in conn.execute(
+        "SELECT provider, SUM(usd_cost) AS usd FROM costs GROUP BY provider"
+    ).fetchall():
+        costs[r["provider"]] = round(r["usd"] or 0.0, 4)
+    conn.close()
+    return json.dumps({
+        "db_path": str(DB_PATH),
+        "people":          n_people,
+        "people_classified": n_classified,
+        "people_pending_classification": max(0, n_people - n_classified),
+        "companies":       n_companies,
+        "companies_enriched": n_enriched,
+        "companies_pending_enrichment": n_unenriched,
+        "cost_so_far_usd": costs,
+        "config": {
+            "anthropic_key_set": bool(ANTHROPIC_API_KEY),
+            "fiber_key_set":     bool(FIBER_API_KEY),
+            "model":             ANTHROPIC_MODEL,
+        },
+    }, indent=2)
+
+
+@mcp.tool()
+def ingest_csv(csv_path: str) -> str:
+    """Load a LinkedIn ``Connections.csv`` export into the people table.
+
+    Args:
+        csv_path: Path to the file. May be absolute, '~'-prefixed, or
+            relative to the cwd of the MCP server. The LinkedIn export's
+            'Notes:' preamble is auto-skipped.
+
+    Free (no API cost). Idempotent: re-running on the same CSV is a no-op.
+    """
+    from netcrm import db, ingest
+    path = Path(csv_path).expanduser().resolve()
+    if not path.exists():
+        return json.dumps({"error": f"file not found: {path}"})
+    conn = _rw_conn()
+    db.apply_migrations(conn, MIGRATIONS_DIR)
+    try:
+        n = ingest.ingest_csv(conn, path)
+    except ValueError as e:
+        return json.dumps({"error": str(e), "hint":
+            "Headers must match LinkedIn export: First Name, Last Name, URL, "
+            "Email Address, Company, Position, Connected On"})
+    finally:
+        conn.close()
+    return json.dumps({
+        "ok": True,
+        "rows_loaded": n,
+        "csv_path": str(path),
+        "next_step": "Call dedupe_companies(), then classify_people(dry_run=true) for a cost estimate.",
+    })
+
+
+@mcp.tool()
+def dedupe_companies() -> str:
+    """Populate the companies table from distinct people.company_key values.
+
+    Free (no API cost). Idempotent. Run after ingest_csv.
+    """
+    from netcrm import companies
+    conn = _rw_conn()
+    try:
+        n = companies.dedupe_companies(conn)
+    finally:
+        conn.close()
+    return json.dumps({
+        "ok": True,
+        "companies": n,
+        "next_step": "Call classify_people(dry_run=true) for a cost estimate.",
+    })
+
+
+@mcp.tool()
+def classify_people(
+    max_spend_usd: float | None = None,
+    batch_size: int = 50,
+    dry_run: bool = True,
+) -> str:
+    """Classify every un-classified person via Anthropic Haiku.
+
+    Args:
+        max_spend_usd: Hard cap on this run's spend. Aborts mid-run if hit.
+            None = no cap. Recommended: $5 for ~5000 people.
+        batch_size: People per LLM call (max 100). Default 50.
+        dry_run: When True (default), prints estimated cost and exits. Set
+            False to actually call Anthropic.
+
+    The dry-run estimate uses conservative token counts and often
+    UNDER-estimates by ~5×. Real cost for ~5,000 people is typically $1–2.
+    """
+    if not dry_run and not ANTHROPIC_API_KEY:
+        return json.dumps({"error": "ANTHROPIC_API_KEY not set"})
+    if batch_size > 100:
+        return json.dumps({"error": "batch_size must be <= 100"})
+    from netcrm import classify, cost as cost_mod
+    conn = _rw_conn()
+    unclassified = classify.count_unclassified(conn)
+    usd_in  = float(os.environ.get("HAIKU_USD_PER_INPUT_MTOK",  "1.00"))
+    usd_out = float(os.environ.get("HAIKU_USD_PER_OUTPUT_MTOK", "5.00"))
+    est = cost_mod.estimate_haiku(
+        unclassified, batch_size=batch_size,
+        input_tokens_per_call=600, output_tokens_per_call=200,
+        usd_per_input_mtok=usd_in, usd_per_output_mtok=usd_out,
+    )
+    if dry_run:
+        conn.close()
+        return json.dumps({
+            "dry_run": True,
+            "would_classify": unclassified,
+            "estimated_usd": round(est, 4),
+            "note": "Real cost typically ~5x this estimate; budget accordingly.",
+        })
+    if unclassified == 0:
+        conn.close()
+        return json.dumps({"ok": True, "would_classify": 0, "note": "everyone is already classified"})
+
+    import anthropic
+    from netcrm.anthropic_client import ClassifierClient
+    sdk = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    classifier = ClassifierClient(sdk, model=ANTHROPIC_MODEL)
+    tracker = cost_mod.CostTracker(conn, max_spend_usd=max_spend_usd)
+    try:
+        n_batches = classify.classify_people(
+            conn, classifier, tracker,
+            model=ANTHROPIC_MODEL, batch_size=batch_size,
+            usd_per_input_mtok=usd_in, usd_per_output_mtok=usd_out,
+        )
+    except cost_mod.SpendCapExceeded as e:
+        conn.close()
+        return json.dumps({"aborted": True, "reason": str(e),
+                           "spent_usd": round(tracker.spent_usd, 4)})
+    finally:
+        if conn:
+            conn.close()
+    return json.dumps({
+        "ok": True,
+        "batches": n_batches,
+        "spent_usd": round(tracker.spent_usd, 4),
+    })
+
+
+@mcp.tool()
+def build_views() -> str:
+    """(Re-)create the people_enriched view. Run after schema changes."""
+    from netcrm import views
+    conn = _rw_conn()
+    try:
+        views.build_views(conn)
+    finally:
+        conn.close()
+    return json.dumps({"ok": True})
 
 
 def main() -> None:

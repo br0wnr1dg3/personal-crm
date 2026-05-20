@@ -8,3 +8,8 @@ crm.db-journal
 *.egg-info/
 dist/
 build/
+
+# User data — LinkedIn exports stay local. Test fixtures are explicitly tracked below.
+/*.csv
+!tests/fixtures/*.csv
+
