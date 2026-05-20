@@ -594,6 +594,295 @@ async def get_credit_balance() -> str:
             })
 
 
+# ---------- Person-level enrichment (Fiber Core syncQuickContactReveal) ----------
+
+FIBER_CORE_URL = "https://mcp.fiber.ai/mcp"
+
+
+def _parse_reveal_response(payload: dict[str, Any]) -> dict[str, Any]:
+    """Map Fiber's contact-reveal response into our row shape."""
+    if payload.get("status") != 200:
+        return {
+            "status": "error",
+            "work_email": None, "personal_email": None, "all_emails": None,
+            "phone_numbers": None,
+            "credits": 0, "raw": json.dumps(payload),
+        }
+    data = payload.get("data") or {}
+    profile = ((data.get("output") or {}).get("profile") or {})
+    emails = profile.get("emails") or []
+    phones = profile.get("phoneNumbers") or []
+    work = next((e["email"] for e in emails if e.get("type") == "work"), None)
+    personal = next((e["email"] for e in emails if e.get("type") == "personal"), None)
+    all_emails = ",".join(e["email"] for e in emails if e.get("email"))
+    all_phones = ",".join(p["number"] for p in phones if p.get("number"))
+    state = profile.get("status") or "unknown"
+    credits = (data.get("chargeInfo") or {}).get("creditsCharged") or 0
+    return {
+        "status": "ok" if (emails or phones) else "not_found",
+        "work_email": work,
+        "personal_email": personal,
+        "all_emails": all_emails or None,
+        "phone_numbers": all_phones or None,
+        "credits": credits,
+        "raw": json.dumps(payload),
+    }
+
+
+async def _reveal_one(
+    session: Any,
+    linkedin_url: str,
+    *,
+    get_work_emails: bool,
+    get_personal_emails: bool,
+    get_phone_numbers: bool,
+    validate_emails: bool,
+) -> dict[str, Any]:
+    r = await session.call_tool("call_operation", {
+        "operationId": "syncQuickContactReveal",
+        "params": {
+            "apiKey": FIBER_API_KEY,
+            "linkedinUrl": linkedin_url,
+            "enrichmentType": {
+                "getWorkEmails": get_work_emails,
+                "getPersonalEmails": get_personal_emails,
+                "getPhoneNumbers": get_phone_numbers,
+            },
+            "validateEmails": validate_emails,
+        },
+    })
+    return _parse_reveal_response(json.loads(r.content[0].text))
+
+
+def _save_reveal(
+    conn: sqlite3.Connection, linkedin_url: str, parsed: dict[str, Any]
+) -> None:
+    conn.execute(
+        """
+        INSERT INTO contact_reveal(
+          linkedin_url, work_email, personal_email, all_emails,
+          phone_numbers, status, revealed_at, raw_payload
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(linkedin_url) DO UPDATE SET
+          work_email=excluded.work_email,
+          personal_email=excluded.personal_email,
+          all_emails=excluded.all_emails,
+          phone_numbers=excluded.phone_numbers,
+          status=excluded.status,
+          revealed_at=excluded.revealed_at,
+          raw_payload=excluded.raw_payload
+        """,
+        (
+            linkedin_url, parsed["work_email"], parsed["personal_email"],
+            parsed["all_emails"], parsed["phone_numbers"],
+            parsed["status"], _now(), parsed["raw"],
+        ),
+    )
+
+
+@mcp.tool()
+async def reveal_contact(
+    linkedin_url: str,
+    get_work_emails: bool = True,
+    get_personal_emails: bool = True,
+    get_phone_numbers: bool = False,
+    force: bool = False,
+) -> str:
+    """Reveal one person's emails (+ optional phone) via Fiber Core.
+
+    Args:
+        linkedin_url: The person's LinkedIn URL (must exist in your people table).
+        get_work_emails: Include work email lookup (default True).
+        get_personal_emails: Include personal email lookup (default True).
+        get_phone_numbers: Include phone-number lookup (default False — usually
+            not needed for outreach and adds ~1 credit per person).
+        force: If True, re-runs even if cached. Default False = skip if
+            we've already revealed this person.
+
+    Cost: ~1 credit per requested enrichment type per person, ≈ $0.04-$0.06
+    for the default work + personal emails.
+    """
+    if not FIBER_API_KEY:
+        return json.dumps({"error": "FIBER_API_KEY not set"})
+    if not any([get_work_emails, get_personal_emails, get_phone_numbers]):
+        return json.dumps({"error": "at least one enrichment type must be true"})
+    conn = _rw_conn()
+    try:
+        if not conn.execute(
+            "SELECT 1 FROM people WHERE linkedin_url=?", (linkedin_url,)
+        ).fetchone():
+            return json.dumps({"error": "unknown linkedin_url", "linkedin_url": linkedin_url})
+        if not force:
+            cached = conn.execute(
+                "SELECT work_email, personal_email, all_emails, phone_numbers, status, revealed_at "
+                "FROM contact_reveal WHERE linkedin_url=?", (linkedin_url,)
+            ).fetchone()
+            if cached:
+                return json.dumps({
+                    "cached": True,
+                    "linkedin_url": linkedin_url,
+                    "work_email": cached["work_email"],
+                    "personal_email": cached["personal_email"],
+                    "all_emails": cached["all_emails"],
+                    "phone_numbers": cached["phone_numbers"],
+                    "status": cached["status"],
+                    "revealed_at": cached["revealed_at"],
+                })
+
+        from mcp import ClientSession
+        from mcp.client.streamable_http import streamablehttp_client
+        headers = {"Authorization": f"Bearer {FIBER_API_KEY}"}
+        async with streamablehttp_client(FIBER_CORE_URL, headers=headers) as (read, write, _):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                parsed = await _reveal_one(
+                    session, linkedin_url,
+                    get_work_emails=get_work_emails,
+                    get_personal_emails=get_personal_emails,
+                    get_phone_numbers=get_phone_numbers,
+                    validate_emails=True,
+                )
+
+        _save_reveal(conn, linkedin_url, parsed)
+        log_cost_via = _rw_conn  # avoid shadowing
+        # log cost via the existing helper pattern (use module-level log)
+        with conn:
+            conn.execute(
+                "INSERT INTO costs(ts, provider, operation, units, usd_cost, context)"
+                " VALUES (?, ?, ?, ?, ?, ?)",
+                (_now(), "fiber", "syncQuickContactReveal",
+                 parsed["credits"], parsed["credits"] * USD_PER_CREDIT, linkedin_url),
+            )
+        return json.dumps({
+            "cached": False,
+            "linkedin_url": linkedin_url,
+            "work_email": parsed["work_email"],
+            "personal_email": parsed["personal_email"],
+            "all_emails": parsed["all_emails"],
+            "phone_numbers": parsed["phone_numbers"],
+            "status": parsed["status"],
+            "credits_charged": parsed["credits"],
+            "usd_cost": round(parsed["credits"] * USD_PER_CREDIT, 4),
+        })
+    finally:
+        conn.close()
+
+
+@mcp.tool()
+async def reveal_contacts_by_filter(
+    filter_sql: str | None = None,
+    max_people: int = 50,
+    dry_run: bool = True,
+    get_phone_numbers: bool = False,
+    max_spend_usd: float | None = None,
+) -> str:
+    """Bulk-reveal contact emails for people matching ``filter_sql``.
+
+    Args:
+        filter_sql: WHERE clause body against people_enriched. Examples:
+            "role_bucket='Marketing' AND seniority='VP' AND industry='Software Development'"
+            "tags LIKE '%demo-scheduled%'"
+            "connected_on >= date('now','-6 months') AND role_bucket='Founder'"
+            Pass None to target all un-revealed people (almost never what you want).
+        max_people: Hard cap on people processed in this call (default 50, max 500).
+        dry_run: True (default) returns scope + cost estimate without spending.
+            Set False to actually reveal.
+        get_phone_numbers: Include phone lookup (default False — extra cost).
+        max_spend_usd: Hard ceiling that aborts mid-run if exceeded.
+
+    Cost ≈ $0.04-$0.06 per person (work + personal email). Phone adds ~$0.02.
+    People already revealed are skipped (idempotent).
+    """
+    if not FIBER_API_KEY:
+        return json.dumps({"error": "FIBER_API_KEY not set"})
+    _safe = filter_sql or "1=1"
+    if _DANGER_RE.search(_safe):
+        return json.dumps({"error": "filter contains write/DDL keywords"})
+    max_people = max(1, min(max_people, 500))
+
+    enrichment_types_requested = 2 + (1 if get_phone_numbers else 0)
+    per_person_credits = enrichment_types_requested
+    per_person_usd = per_person_credits * USD_PER_CREDIT
+
+    target_sql = f"""
+        SELECT pe.linkedin_url, pe.first_name, pe.last_name,
+               pe.company_name, pe.role_bucket, pe.seniority
+        FROM people_enriched pe
+        LEFT JOIN contact_reveal cr ON cr.linkedin_url = pe.linkedin_url
+        WHERE cr.linkedin_url IS NULL
+          AND ({_safe})
+        LIMIT {max_people}
+    """
+    conn = _rw_conn()
+    targets = conn.execute(target_sql).fetchall()
+    est_usd = round(len(targets) * per_person_usd, 2)
+
+    if dry_run or not targets:
+        conn.close()
+        return json.dumps({
+            "dry_run": dry_run,
+            "would_reveal": len(targets),
+            "credits_per_person": per_person_credits,
+            "estimated_usd": est_usd,
+            "first_5": [
+                {"name": f"{t['first_name']} {t['last_name']}",
+                 "company": t["company_name"], "role": t["role_bucket"],
+                 "seniority": t["seniority"]}
+                for t in targets[:5]
+            ],
+            "hint": "set dry_run=false to actually run; consider max_spend_usd as a safety net",
+        })
+
+    from mcp import ClientSession
+    from mcp.client.streamable_http import streamablehttp_client
+    headers = {"Authorization": f"Bearer {FIBER_API_KEY}"}
+    ok = not_found = errors = 0
+    spent = 0.0
+    aborted_at = None
+
+    async with streamablehttp_client(FIBER_CORE_URL, headers=headers) as (read, write, _):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            for i, t in enumerate(targets, start=1):
+                if max_spend_usd is not None and spent + per_person_usd > max_spend_usd:
+                    aborted_at = i - 1
+                    break
+                try:
+                    parsed = await _reveal_one(
+                        session, t["linkedin_url"],
+                        get_work_emails=True,
+                        get_personal_emails=True,
+                        get_phone_numbers=get_phone_numbers,
+                        validate_emails=True,
+                    )
+                except Exception:
+                    errors += 1
+                    continue
+                _save_reveal(conn, t["linkedin_url"], parsed)
+                credits = parsed["credits"]
+                spend = credits * USD_PER_CREDIT
+                with conn:
+                    conn.execute(
+                        "INSERT INTO costs(ts, provider, operation, units, usd_cost, context)"
+                        " VALUES (?, ?, ?, ?, ?, ?)",
+                        (_now(), "fiber", "syncQuickContactReveal",
+                         credits, spend, t["linkedin_url"]),
+                    )
+                spent += spend
+                if parsed["status"] == "ok":
+                    ok += 1
+                elif parsed["status"] == "not_found":
+                    not_found += 1
+                else:
+                    errors += 1
+    conn.close()
+    return json.dumps({
+        "ok": ok, "not_found": not_found, "errors": errors,
+        "spent_usd": round(spent, 4),
+        "aborted_at_index": aborted_at,
+    })
+
+
 # ---------- Pipeline (ingest / dedupe / classify) ----------
 
 @mcp.tool()
