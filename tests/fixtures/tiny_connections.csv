@@ -1,0 +1,24 @@
+Notes:
+"When exporting your connection data, you may notice that some of the email addresses are missing..."
+
+First Name,Last Name,URL,Email Address,Company,Position,Connected On
+Alice,Smith,https://www.linkedin.com/in/alice-smith-1,alice@example.com,Acme Inc.,VP of Sales,15 May 2026
+Bob,Jones,https://www.linkedin.com/in/bob-jones-2,,"ACME, Inc",Senior Software Engineer,10 Mar 2024
+Carol,O'Brien,https://www.linkedin.com/in/carol-obrien-3,,Initech Ltd.,Founder & CEO,01 Jan 2022
+Daniel,Müller,https://www.linkedin.com/in/daniel-muller-4,,Globex GmbH,Marketing Director,30 Jun 2025
+Eve,Tan,https://www.linkedin.com/in/eve-tan-5,eve@umbrella.co,Umbrella Corp,Head of Growth,12 Feb 2026
+Frank,Brown,https://www.linkedin.com/in/frank-brown-6,,,Consultant,05 Aug 2023
+Grace,Hopper,https://www.linkedin.com/in/grace-hopper-7,,Soylent,Founding Engineer,17 Sep 2025
+Hank,Lee,https://www.linkedin.com/in/hank-lee-8,,Tesla,Marketing Lead,22 Nov 2025
+Ivy,Park,https://www.linkedin.com/in/ivy-park-9,,Massive Dynamic,Business Development Manager,03 Apr 2026
+Jack,Doe,https://www.linkedin.com/in/jack-doe-10,,Wayne Enterprises,Chief Product Officer,18 Dec 2023
+Kara,Zor-El,https://www.linkedin.com/in/kara-zor-el-11,,Stark Industries,Student Intern,02 Jul 2024
+Liam,Foley,https://www.linkedin.com/in/liam-foley-12,,Stark Industries,VP of Engineering,11 Oct 2024
+Mia,Chen,https://www.linkedin.com/in/mia-chen-13,,Acme Inc,Account Executive,28 Feb 2025
+Noah,Khan,https://www.linkedin.com/in/noah-khan-14,,Sequoia Capital,Principal,19 Jun 2026
+Olivia,Reed,https://www.linkedin.com/in/olivia-reed-15,,,,29 Sep 2025
+Pete,Singh,https://www.linkedin.com/in/pete-singh-16,,Nuts & Bolts AI,Co-founder,01 Jan 2024
+Quinn,Walsh,https://www.linkedin.com/in/quinn-walsh-17,,Cogent Labs Ltd.,Director of Marketing,14 Mar 2026
+Rita,Mendes,https://www.linkedin.com/in/rita-mendes-18,,Globex GmbH,Software Engineer,20 May 2024
+Sam,Park,https://www.linkedin.com/in/sam-park-19,,Acme Inc.,Customer Success Manager,07 Aug 2025
+Tara,Singh,https://www.linkedin.com/in/tara-singh-20,,Nuts & Bolts AI,Head of Operations,21 Jan 2026

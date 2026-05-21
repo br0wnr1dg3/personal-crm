@@ -1,0 +1,57 @@
+{
+  "acme": {
+    "industry": "Manufacturing",
+    "sub_industry": "Industrial Equipment",
+    "employee_band": "201-500",
+    "revenue_band": "$50M-$100M",
+    "funding_stage": "Public",
+    "hq_country": "US",
+    "hq_region": "California",
+    "website": "https://acme.example.com",
+    "description": "Industrial supplies."
+  },
+  "initech": {
+    "industry": "Software",
+    "sub_industry": "Enterprise SaaS",
+    "employee_band": "51-200",
+    "revenue_band": "$10M-$50M",
+    "funding_stage": "Series B",
+    "hq_country": "US",
+    "hq_region": "Texas",
+    "website": "https://initech.example.com",
+    "description": "TPS reports automation."
+  },
+  "globex": {
+    "industry": "Technology",
+    "sub_industry": "Consumer Electronics",
+    "employee_band": "1001-5000",
+    "revenue_band": "$500M-$1B",
+    "funding_stage": "Public",
+    "hq_country": "DE",
+    "hq_region": "Bavaria",
+    "website": "https://globex.example.com",
+    "description": "Consumer hardware giant."
+  },
+  "stark industries": {
+    "industry": "Aerospace",
+    "sub_industry": "Defense",
+    "employee_band": "5001-10000",
+    "revenue_band": "$1B+",
+    "funding_stage": "Public",
+    "hq_country": "US",
+    "hq_region": "New York",
+    "website": "https://stark.example.com",
+    "description": "Advanced defense systems."
+  },
+  "nuts and bolts ai": {
+    "industry": "Software",
+    "sub_industry": "AI Tooling",
+    "employee_band": "1-10",
+    "revenue_band": "<$1M",
+    "funding_stage": "Bootstrapped",
+    "hq_country": "IE",
+    "hq_region": "Dublin",
+    "website": "https://nutsandbolts.ai",
+    "description": "Personal automation."
+  }
+}

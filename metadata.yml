@@ -1,0 +1,20 @@
+title: Personal Network CRM
+description: Enriched LinkedIn connections — queryable Rolodex 2.0
+
+databases:
+  crm:
+    title: Network
+    queries:
+      reconnect_targets:
+        sql_file: saved_queries/reconnect_targets.sql
+        title: Reconnect targets
+        description: Connected ≥12mo ago, senior, in target roles
+      sales_at_growth_companies:
+        sql_file: saved_queries/sales_at_growth_companies.sql
+        title: Sales at growth companies
+      marketing_leaders:
+        sql_file: saved_queries/marketing_leaders.sql
+        title: Marketing leaders
+      founders_in_target_industries:
+        sql_file: saved_queries/founders_in_target_industries.sql
+        title: Founders in target industries

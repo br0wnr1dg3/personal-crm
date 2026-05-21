@@ -1,0 +1,36 @@
+[project]
+name = "netcrm"
+version = "0.1.0"
+description = "Personal network CRM built from LinkedIn connections.csv"
+requires-python = ">=3.11"
+dependencies = [
+  "typer>=0.12",
+  "httpx>=0.27",
+  "anthropic>=0.40",
+  "python-dotenv>=1.0",
+  "tqdm>=4.66",
+  "mcp>=1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8",
+  "respx>=0.21",
+  "pytest-asyncio>=0.23",
+  "pyyaml>=6",
+]
+serve = [
+  "datasette>=1.0a13",
+]
+
+[project.scripts]
+netcrm = "netcrm.cli:app"
+netcrm-mcp = "netcrm.mcp_server:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v"
