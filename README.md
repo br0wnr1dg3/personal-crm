@@ -26,7 +26,7 @@ Everything runs **locally** on your machine. Your contacts never leave your lapt
 Recommended path — let Claude walk you through it:
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/personal-network-crm.git
+git clone https://github.com/br0wnr1dg3/personal-network-crm.git
 cd personal-network-crm
 claude                          # opens Claude Code in this directory
 > /personal-crm-setup           # paste this slash command in chat
