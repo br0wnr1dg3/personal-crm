@@ -934,6 +934,51 @@ def pipeline_status() -> str:
 
 
 @mcp.tool()
+def find_linkedin_csv() -> str:
+    """Scan common locations for a LinkedIn Connections.csv export.
+
+    Searches ~/Downloads, ~/Desktop, and ~/Documents for files named
+    "Connections.csv" (the file LinkedIn ships inside its export zip).
+    Also flags any LinkedIn export zip files the user hasn't unzipped yet.
+
+    Use this when the user says "I have my CSV, can you find it" rather
+    than ask them for the exact path.
+    """
+    import glob
+    home = Path.home()
+    candidates = []
+    zips = []
+    for root in (home / "Downloads", home / "Desktop", home / "Documents"):
+        if not root.exists():
+            continue
+        # Direct Connections.csv hits
+        for hit in glob.glob(str(root / "**" / "Connections.csv"), recursive=True):
+            try:
+                size = Path(hit).stat().st_size
+                mtime = Path(hit).stat().st_mtime
+                candidates.append({"path": hit, "size_bytes": size, "mtime": mtime})
+            except OSError:
+                pass
+        # Unzipped LinkedIn export zips the user may have missed
+        for hit in glob.glob(str(root / "Basic_LinkedInDataExport*.zip")):
+            zips.append(hit)
+        for hit in glob.glob(str(root / "*LinkedIn*Export*.zip")):
+            if hit not in zips:
+                zips.append(hit)
+
+    # Sort candidates by mtime (most recent first)
+    candidates.sort(key=lambda c: c["mtime"], reverse=True)
+    return json.dumps({
+        "found": candidates,
+        "unzipped_archives": zips,
+        "hint": (
+            "If 'found' is empty but 'unzipped_archives' has entries, the user "
+            "needs to unzip the LinkedIn export first. The CSV is inside the zip."
+        ) if not candidates and zips else None,
+    }, indent=2, default=str)
+
+
+@mcp.tool()
 def ingest_csv(csv_path: str) -> str:
     """Load a LinkedIn ``Connections.csv`` export into the people table.
 

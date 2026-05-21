@@ -54,7 +54,14 @@ Don't have Claude Code yet, or prefer a one-liner? `./setup.sh` does the same th
 
 ### Getting your LinkedIn CSV
 
-LinkedIn → Settings → Data Privacy → [Get a copy of your data](https://www.linkedin.com/mypreferences/d/download-my-data) → select **Connections** → wait ~10 minutes → download → unzip → there's your `Connections.csv`.
+1. Go to [linkedin.com/mypreferences/d/download-my-data](https://www.linkedin.com/mypreferences/d/download-my-data)
+2. Tick **Connections only** (not "Want something in particular?" → just Connections)
+3. Click **Request archive**. LinkedIn emails you a download link in ~10 minutes.
+4. Download the ZIP. **Unzip it** — inside is `Connections.csv`.
+5. Leave it wherever it lands (Downloads is fine) — the agent will find it.
+
+> [!NOTE]
+> Common mistake: trying to feed the ZIP file directly. The CSV is **inside** the zip — unzip first.
 
 ---
 
@@ -62,16 +69,16 @@ LinkedIn → Settings → Data Privacy → [Get a copy of your data](https://www
 
 Restart Claude Code, then in any new chat:
 
-> Use the netcrm MCP server. Call pipeline_status to see what's there, then ingest my CSV at `~/Downloads/Connections.csv`.
+> Use the netcrm MCP server. Find my LinkedIn CSV and ingest it.
 
 The agent will:
 
-1. Run `pipeline_status` → see an empty DB
-2. Run `ingest_csv` → load all your contacts (free, ~1 second)
-3. Run `dedupe_companies` → roll up to unique companies (free)
-4. Run `classify_people` with `dry_run=true` → show estimated cost (~$1–2)
-5. Ask you to confirm the spend
-6. Run `classify_people` with `dry_run=false` and `max_spend_usd=5` → 2–3 minutes
+1. Call `find_linkedin_csv` → search `~/Downloads`, `~/Desktop`, `~/Documents` for `Connections.csv` and confirm the path with you (also flags un-unzipped LinkedIn archives if you forgot to unzip)
+2. Call `pipeline_status` → see the DB is empty
+3. Call `ingest_csv` with the found path → loads all your contacts (free, ~1 second)
+4. Call `dedupe_companies` → rolls up to unique companies (free)
+5. Call `classify_people` with `dry_run=true` → shows estimated cost
+6. Ask you to confirm the spend, then runs it with `max_spend_usd=5` → 2–3 minutes
 
 That gets you queryable role/seniority for everyone. Then ask:
 
@@ -81,11 +88,11 @@ The agent will show you scope + cost, and propose narrower slices if it's expens
 
 ---
 
-## What the agent can do (19 tools)
+## What the agent can do (20 tools)
 
 | Category | Tools |
 |---|---|
-| **Orient** | `pipeline_status`, `list_schema`, `get_credit_balance` |
+| **Orient** | `pipeline_status`, `list_schema`, `get_credit_balance`, `find_linkedin_csv` |
 | **Pipeline** | `ingest_csv`, `dedupe_companies`, `classify_people`, `build_views` |
 | **Query** | `query_contacts` (read-only SQL), `get_contact` |
 | **Tag/note** | `add_tag`, `remove_tag`, `list_tags`, `set_note`, `append_note`, `mark_outreached` |
