@@ -57,25 +57,10 @@ test -x .venv/bin/netcrm-mcp && echo "netcrm-mcp installed"
 
 ## Step 3: API keys
 
-Check whether `.env` already exists:
+If `.env` doesn't exist yet, copy the template:
 
 ```bash
-test -f .env && echo "exists" || echo "missing"
-```
-
-If it doesn't exist, create a fresh one with this content (write the file, then we'll fill in keys):
-
-```
-# Fiber AI organization + contact enrichment
-FIBER_API_KEY=
-FIBER_USD_PER_CREDIT=0.020
-
-# Anthropic for Haiku classification
-ANTHROPIC_API_KEY=
-ANTHROPIC_MODEL=claude-haiku-4-5-20251001
-
-# Database (resolved relative to repo root if relative)
-NETCRM_DB_PATH=crm.db
+test -f .env || cp .env.example .env
 ```
 
 Then check whether `FIBER_API_KEY` or `ANTHROPIC_API_KEY` are blank in `.env` (use `grep -E '^FIBER_API_KEY=$' .env`).

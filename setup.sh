@@ -70,28 +70,8 @@ if [ -f .env ]; then
   warn ".env already exists — leaving it alone."
   warn "  If you want to reconfigure, delete .env and re-run."
 else
-  cat > .env <<'TEMPLATE'
-# Fiber AI organization enrichment
-# Sign up: https://fiber.ai/  (need a paid plan for the V2 MCP endpoint)
-FIBER_API_KEY=
-FIBER_USD_PER_CREDIT=0.020
-
-# Anthropic for Haiku classification
-# Sign up: https://console.anthropic.com/  (~$1-2 for a 5,000-contact CSV)
-ANTHROPIC_API_KEY=
-ANTHROPIC_MODEL=claude-haiku-4-5-20251001
-
-# Database lives next to this file by default
-NETCRM_DB_PATH=
-TEMPLATE
-  # set NETCRM_DB_PATH to the absolute repo path/crm.db
-  python3 -c "
-import re, pathlib
-p = pathlib.Path('.env')
-t = p.read_text().replace('NETCRM_DB_PATH=', f'NETCRM_DB_PATH=$REPO_ROOT/crm.db')
-p.write_text(t)
-"
-  ok "Wrote .env template"
+  cp .env.example .env
+  ok "Copied .env.example → .env"
 fi
 
 if grep -qE '^FIBER_API_KEY=$' .env; then
