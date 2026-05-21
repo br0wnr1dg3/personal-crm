@@ -23,26 +23,34 @@ Everything runs **locally** on your machine. Your contacts never leave your lapt
 
 ## Setup (5 minutes)
 
+Recommended path — let Claude walk you through it:
+
 ```bash
 git clone https://github.com/YOUR_USERNAME/personal-network-crm.git
 cd personal-network-crm
-./setup.sh
+claude                          # opens Claude Code in this directory
+> /personal-crm-setup           # paste this slash command in chat
 ```
 
-The script will:
+Claude will:
 
-1. Create a Python venv and install the package
-2. Ask you for your Fiber and Anthropic API keys (you can skip and add later by editing `.env`)
-3. Initialize the local SQLite database
-4. Wire the MCP server into `~/.claude.json` so Claude Code can see it
-5. Tell you what to do next
+1. Find a Python 3.11+ on your machine
+2. Create a venv and install netcrm
+3. Prompt you for your Fiber and Anthropic API keys (you can skip either; add later by editing `.env`)
+4. Initialize the local SQLite database
+5. Wire the MCP server into `~/.claude.json` (with a backup)
+6. Tell you exactly what to do next
 
-Then **restart Claude Code** (so it picks up the new MCP server).
+Then **restart Claude Code** (Cmd-Q + reopen, or exit + `claude` again) so it picks up the new MCP server.
+
+### Alternative: shell script
+
+Don't have Claude Code yet, or prefer a one-liner? `./setup.sh` does the same thing non-interactively (prompts for keys via stdin). The slash command is friendlier; the script is fine for CI or scripted installs.
 
 ### Getting the API keys
 
 - **Anthropic (required):** [console.anthropic.com](https://console.anthropic.com/) — ~$1–2 for a 5,000-contact CSV. You'll need a payment method on file.
-- **Fiber AI (recommended):** [fiber.ai](https://fiber.ai/) — company enrichment (industry, headcount, location). Their Prospector plan is $300/15k credits ≈ $0.02/credit. You can skip this for classification-only, but the ICP-shaped queries won't work without it.
+- **Fiber AI (recommended):** [fiber.ai](https://fiber.ai/) — company enrichment (industry, headcount, location) + email/phone reveal. Prospector plan is $300/15k credits ≈ $0.02/credit. You can skip this for classification-only, but the ICP queries and email-reveal tool need it.
 
 ### Getting your LinkedIn CSV
 
@@ -73,7 +81,7 @@ The agent will show you scope + cost, and propose narrower slices if it's expens
 
 ---
 
-## What the agent can do (17 tools)
+## What the agent can do (19 tools)
 
 | Category | Tools |
 |---|---|
@@ -81,7 +89,8 @@ The agent will show you scope + cost, and propose narrower slices if it's expens
 | **Pipeline** | `ingest_csv`, `dedupe_companies`, `classify_people`, `build_views` |
 | **Query** | `query_contacts` (read-only SQL), `get_contact` |
 | **Tag/note** | `add_tag`, `remove_tag`, `list_tags`, `set_note`, `append_note`, `mark_outreached` |
-| **Enrich** | `count_enrichment_scope`, `enrich_companies` (dry-run by default, hard spend caps) |
+| **Company enrich** | `count_enrichment_scope`, `enrich_companies` (dry-run by default, hard spend caps) |
+| **Person reveal** | `reveal_contact`, `reveal_contacts_by_filter` (work + personal email, optional phone) |
 
 Mutations go through narrow tool surfaces. Read queries can be any `SELECT` — the agent is good at writing the SQL itself.
 
@@ -120,6 +129,9 @@ For a typical 5,000-contact CSV:
   - **All companies** (~2,000–3,500 unique): $160–280
   - **Senior GTM only** (~1,500): $120
   - **Recent + senior + GTM** (~250): $20
+- **Email reveal (Fiber):** ~$0.04 per person for work + personal email. Bulk by filter, idempotent — re-asking for the same person is free (cached).
+  - 100 senior outreach targets: ~$4
+  - 1,000 contacts: ~$40
 - The agent will always show estimates before spending, and you can set `max_spend_usd` caps on any run.
 
 ---
